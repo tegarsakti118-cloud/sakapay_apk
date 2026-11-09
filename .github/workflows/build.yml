@@ -24,34 +24,28 @@ jobs:
           flutter-version: '3.19.6'
           channel: 'stable'
 
-      - name: Setup Scaffold & Compile APK
+      - name: Compile APK
         run: |
           mkdir -p /tmp/backup
           cp -r lib /tmp/backup/
+          cp -r native_code /tmp/backup/
           cp pubspec.yaml /tmp/backup/
           cp custom_manifest.xml /tmp/backup/
 
-          # Inisialisasi scaffolding Android
           flutter create --platforms=android --org com.sakapay.app .
 
           cp -r /tmp/backup/lib .
           cp /tmp/backup/pubspec.yaml .
           cp /tmp/backup/custom_manifest.xml android/app/src/main/AndroidManifest.xml
+          
+          # Timpa MainActivity dengan kode native kita
+          mkdir -p android/app/src/main/kotlin/com/sakapay/app
+          cp /tmp/backup/native_code/MainActivity.kt android/app/src/main/kotlin/com/sakapay/app/MainActivity.kt
 
-          # Set minimum SDK ke 21 (syarat ML Kit)
           sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle || true
           sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle || true
 
-          # Tambahkan aturan ProGuard untuk Google ML Kit
-          cat << 'EOF_PROGUARD' > android/app/proguard-rules.pro
-          -dontwarn com.google.mlkit.**
-          -keep class com.google.mlkit.** { *; }
-          -dontwarn androidx.**
-          -keep class io.flutter.** { *; }
-          EOF_PROGUARD
-
           flutter pub get
-          # Compile APK
           flutter build apk --debug
 
       - name: Upload APK Artifact

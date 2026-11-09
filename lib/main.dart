@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
-import 'package:receive_sharing_intent/receive_sharing_intent.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:screenshot/screenshot.dart';
 import 'package:share_plus/share_plus.dart';
@@ -26,9 +26,8 @@ class SakapayHome extends StatefulWidget {
 
 class _SakapayHomeState extends State<SakapayHome> {
   final ScreenshotController _screenshotController = ScreenshotController();
-  StreamSubscription? _intentSub;
+  static const platform = MethodChannel('com.sakapay.app/share');
 
-  // Status & Data Transaksi
   bool isPln = false;
   String waktuTrx = "";
   String refId = "240365967239";
@@ -38,7 +37,6 @@ class _SakapayHomeState extends State<SakapayHome> {
   String namaPelanggan = "SRI DEWI";
   String kwh = "30.10KWH";
 
-  // Data Bank
   String bankTujuan = "BRI";
   String noRekening = "003301045155532";
   String penerima = "YAYASAN HMQ LIRBOYO";
@@ -53,29 +51,26 @@ class _SakapayHomeState extends State<SakapayHome> {
   void initState() {
     super.initState();
     waktuTrx = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-
-    // Menerima Share Gambar saat aplikasi berjalan
-    _intentSub = ReceiveSharingIntent.getImageStream().listen((List<SharedMediaFile> value) {
-      if (value.isNotEmpty) {
-        _prosesGambar(File(value.first.path));
-      }
-    });
-
-    // Menerima Share Gambar saat aplikasi ditutup/baru dibuka
-    ReceiveSharingIntent.getInitialMedia().then((List<SharedMediaFile> value) {
-      if (value.isNotEmpty) {
-        _prosesGambar(File(value.first.path));
-      }
-    });
+    _periksaDataShare();
   }
 
-  @override
-  void dispose() {
-    _intentSub?.cancel();
-    super.dispose();
+  Future<void> _periksaDataShare() async {
+    try {
+      final String? data = await platform.invokeMethod('getSharedData');
+      if (data != null) {
+        if (data.startsWith('IMAGE:')) {
+          final filePath = data.substring(6);
+          _prosesGambar(File(filePath));
+        } else if (data.startsWith('TEXT:')) {
+          final rawText = data.substring(5);
+          _parseHasilOcr(rawText);
+        }
+      }
+    } catch (e) {
+      debugPrint("Error Share Intent: $e");
+    }
   }
 
-  // OCR memindai gambar screenshot
   Future<void> _prosesGambar(File imageFile) async {
     final inputImage = InputImage.fromFile(imageFile);
     final textRecognizer = TextRecognizer(script: TextRecognitionScript.latin);
@@ -89,7 +84,6 @@ class _SakapayHomeState extends State<SakapayHome> {
     setState(() {
       waktuTrx = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
 
-      // Deteksi PLN Token
       if (text.toLowerCase().contains("pln") || text.toLowerCase().contains("token") || text.toLowerCase().contains("stroom")) {
         isPln = true;
         RegExp tokenRegex = RegExp(r'\b\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}\b');
@@ -103,7 +97,6 @@ class _SakapayHomeState extends State<SakapayHome> {
         isPln = false;
       }
 
-      // Deteksi Nominal
       RegExp nomRegex = RegExp(r'(?:Rp|IDR)\s?([0-9.,]+)', caseSensitive: false);
       var nomMatch = nomRegex.firstMatch(text);
       if (nomMatch != null) {
@@ -111,7 +104,6 @@ class _SakapayHomeState extends State<SakapayHome> {
         total = nominal;
       }
 
-      // Deteksi Referensi
       RegExp refRegex = RegExp(r'(?:ref|nomor ref|transaksi|id)[:\s]+([0-9A-Za-z]+)', caseSensitive: false);
       var refMatch = refRegex.firstMatch(text);
       if (refMatch != null) {
@@ -120,7 +112,6 @@ class _SakapayHomeState extends State<SakapayHome> {
     });
   }
 
-  // Ambil manual dari galeri
   Future<void> _pilihGambarManual() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
@@ -129,7 +120,6 @@ class _SakapayHomeState extends State<SakapayHome> {
     }
   }
 
-  // Bagikan Struk ke WA / Media Lain
   Future<void> _bagikanStruk() async {
     final Uint8List? imageBytes = await _screenshotController.capture();
     if (imageBytes != null) {
@@ -145,13 +135,18 @@ class _SakapayHomeState extends State<SakapayHome> {
     return Scaffold(
       backgroundColor: const Color(0xFF1E1E1E),
       appBar: AppBar(
-        title: const Text("SAKAPAY Struk Generator", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: const Text("SAKAPAY Struk", style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.black,
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _periksaDataShare,
+            tooltip: "Muat Ulang Share",
+          ),
+          IconButton(
             icon: const Icon(Icons.photo_library),
             onPressed: _pilihGambarManual,
-            tooltip: "Pilih Bukti dari Galeri",
+            tooltip: "Pilih Foto",
           ),
           IconButton(
             icon: const Icon(Icons.share),
@@ -170,7 +165,7 @@ class _SakapayHomeState extends State<SakapayHome> {
                 ElevatedButton.icon(
                   onPressed: () => setState(() => isPln = false),
                   icon: const Icon(Icons.account_balance),
-                  label: const Text("Struk Transfer"),
+                  label: const Text("Transfer"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: !isPln ? Colors.blue : Colors.grey[800],
                   ),
@@ -179,7 +174,7 @@ class _SakapayHomeState extends State<SakapayHome> {
                 ElevatedButton.icon(
                   onPressed: () => setState(() => isPln = true),
                   icon: const Icon(Icons.bolt),
-                  label: const Text("Token PLN"),
+                  label: const Text("PLN"),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: isPln ? Colors.orange : Colors.grey[800],
                   ),
@@ -187,8 +182,6 @@ class _SakapayHomeState extends State<SakapayHome> {
               ],
             ),
             const SizedBox(height: 15),
-
-            // Tampilan Struk Fisik SAKAPAY
             Center(
               child: Screenshot(
                 controller: _screenshotController,
@@ -199,7 +192,6 @@ class _SakapayHomeState extends State<SakapayHome> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      // Logo SAKAPAY Petir Panah
                       const Icon(Icons.electric_bolt, size: 55, color: Colors.black),
                       const Text(
                         "SAKAPAY",
@@ -207,12 +199,10 @@ class _SakapayHomeState extends State<SakapayHome> {
                       ),
                       const SizedBox(height: 8),
                       const Text("--------------------------------------------------", maxLines: 1, style: TextStyle(color: Colors.black)),
-                      
                       Text(
                         isPln ? "TOKEN LISTRIK PRABAYAR" : "==================================",
                         style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black),
                       ),
-                      
                       if (isPln) ...[
                         Text(waktuTrx, style: const TextStyle(fontFamily: 'monospace', fontSize: 13, color: Colors.black)),
                         const Text("--------------------------------------------------", maxLines: 1, style: TextStyle(color: Colors.black)),
@@ -251,7 +241,6 @@ class _SakapayHomeState extends State<SakapayHome> {
                         _rowItem("TOTAL", "RP $total", isBold: true),
                         const Text("==================================", maxLines: 1, style: TextStyle(color: Colors.black)),
                       ],
-
                       const SizedBox(height: 12),
                       const Text("** TRANSAKSI BERHASIL **", style: TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black)),
                       const Text("TERIMA KASIH ATAS KEPERCAYAAN", style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.black)),
