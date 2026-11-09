@@ -31,20 +31,31 @@ jobs:
           cp pubspec.yaml /tmp/backup/
           cp custom_manifest.xml /tmp/backup/
 
+          # Inisialisasi scaffolding Android
           flutter create --platforms=android --org com.sakapay.app .
 
           cp -r /tmp/backup/lib .
           cp /tmp/backup/pubspec.yaml .
           cp /tmp/backup/custom_manifest.xml android/app/src/main/AndroidManifest.xml
 
+          # Set minimum SDK ke 21 (syarat ML Kit)
           sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle || true
           sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle || true
 
+          # Tambahkan aturan ProGuard untuk Google ML Kit
+          cat << 'EOF_PROGUARD' > android/app/proguard-rules.pro
+          -dontwarn com.google.mlkit.**
+          -keep class com.google.mlkit.** { *; }
+          -dontwarn androidx.**
+          -keep class io.flutter.** { *; }
+          EOF_PROGUARD
+
           flutter pub get
-          flutter build apk --release
+          # Compile APK
+          flutter build apk --debug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SAKAPAY-Struk-Release
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: SAKAPAY-Struk-App
+          path: build/app/outputs/flutter-apk/*.apk
