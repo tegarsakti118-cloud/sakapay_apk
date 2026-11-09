@@ -1,0 +1,50 @@
+name: Build SAKAPAY APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.6'
+          channel: 'stable'
+
+      - name: Setup Scaffold & Compile APK
+        run: |
+          mkdir -p /tmp/backup
+          cp -r lib /tmp/backup/
+          cp pubspec.yaml /tmp/backup/
+          cp custom_manifest.xml /tmp/backup/
+
+          flutter create --platforms=android --org com.sakapay.app .
+
+          cp -r /tmp/backup/lib .
+          cp /tmp/backup/pubspec.yaml .
+          cp /tmp/backup/custom_manifest.xml android/app/src/main/AndroidManifest.xml
+
+          sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle || true
+          sed -i 's/minSdk = .*/minSdk = 21/' android/app/build.gradle || true
+
+          flutter pub get
+          flutter build apk --release
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAKAPAY-Struk-Release
+          path: build/app/outputs/flutter-apk/app-release.apk
